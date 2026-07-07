@@ -9,6 +9,11 @@ build/
 dist/
 .next/
 
+# Python virtual environments
+venv/
+.venv/
+env/
+ENV/
 # Environment files
 .env
 .env.local
