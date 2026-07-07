@@ -1,206 +1,285 @@
-import { useState } from 'react';
-import { fetchCustomerById } from '../utils/api';
-import { Brain, AlertTriangle, Shield, TrendingUp } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { fetchCustomers } from '../utils/api';
+import axios from 'axios';
+import { Brain, AlertTriangle, Shield, TrendingUp, Zap, Target } from 'lucide-react';
+
+const ML_API = 'http://localhost:5001';
 
 export default function Predictions() {
-  const [customerId, setCustomerId] = useState('');
-  const [customer, setCustomer] = useState(null);
+  const [customers, setCustomers] = useState([]);
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [prediction, setPrediction] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [batchResults, setBatchResults] = useState(null);
 
-  const handleSearch = async (e) => {
-    e.preventDefault();
-    if (!customerId) return;
-    
+  const loadHighRiskCustomers = async () => {
+    try {
+      const res = await fetchCustomers({ segment: 'At Risk', limit: 20 });
+      setCustomers(res.data.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    loadHighRiskCustomers();
+  }, []);
+
+  const predictChurn = async (customer) => {
     setLoading(true);
-    setError(null);
+    setSelectedCustomer(customer);
     
     try {
-      const res = await fetchCustomerById(customerId);
-      setCustomer(res.data.data);
+      const payload = {
+        tenure: customer.account.tenure,
+        monthlyCharges: customer.account.monthlyCharges,
+        totalCharges: customer.account.totalCharges,
+        serviceCount: customer.metrics.serviceCount,
+        seniorCitizen: customer.demographics.seniorCitizen,
+        gender: customer.demographics.gender,
+        partner: customer.demographics.partner,
+        dependents: customer.demographics.dependents,
+        contract: customer.account.contract,
+        onlineSecurity: customer.services.onlineSecurity,
+        techSupport: customer.services.techSupport,
+        onlineBackup: customer.services.onlineBackup,
+        deviceProtection: customer.services.deviceProtection,
+        streamingTV: customer.services.streamingTV,
+        streamingMovies: customer.services.streamingMovies,
+        internetService: customer.services.internetService,
+        phone: customer.services.phone,
+        multipleLines: customer.services.multipleLines,
+        paymentMethod: customer.account.paymentMethod,
+        paperlessBilling: customer.account.paperlessBilling
+      };
+
+      const res = await axios.post(`${ML_API}/predict`, payload);
+      setPrediction(res.data.prediction);
     } catch (err) {
-      setError('Customer not found');
-      setCustomer(null);
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const runBatchPrediction = async () => {
+    setLoading(true);
+    try {
+      const payload = {
+        customers: customers.slice(0, 10).map(c => ({
+          customerId: c.customerId,
+          tenure: c.account.tenure,
+          monthlyCharges: c.account.monthlyCharges,
+          totalCharges: c.account.totalCharges,
+          serviceCount: c.metrics.serviceCount,
+          seniorCitizen: c.demographics.seniorCitizen,
+          gender: c.demographics.gender,
+          partner: c.demographics.partner,
+          dependents: c.demographics.dependents,
+          contract: c.account.contract,
+          onlineSecurity: c.services.onlineSecurity,
+          techSupport: c.services.techSupport,
+          onlineBackup: c.services.onlineBackup,
+          deviceProtection: c.services.deviceProtection,
+          streamingTV: c.services.streamingTV,
+          streamingMovies: c.services.streamingMovies,
+          internetService: c.services.internetService,
+          phone: c.services.phone,
+          multipleLines: c.services.multipleLines,
+          paymentMethod: c.account.paymentMethod,
+          paperlessBilling: c.account.paperlessBilling
+        }))
+      };
+
+      const res = await axios.post(`${ML_API}/batch-predict`, payload);
+      setBatchResults(res.data);
+    } catch (err) {
+      console.error(err);
     } finally {
       setLoading(false);
     }
   };
 
   const getRiskColor = (score) => {
-    if (score >= 70) return 'text-red-600 bg-red-50';
-    if (score >= 40) return 'text-orange-600 bg-orange-50';
-    return 'text-green-600 bg-green-50';
-  };
-
-  const getSegmentColor = (segment) => {
-    const colors = {
-      'High Value': 'bg-green-100 text-green-800',
-      'At Risk': 'bg-red-100 text-red-800',
-      'Stable': 'bg-blue-100 text-blue-800',
-      'New': 'bg-purple-100 text-purple-800',
-      'Lost': 'bg-gray-100 text-gray-800'
-    };
-    return colors[segment] || 'bg-gray-100 text-gray-800';
+    if (score >= 70) return 'text-red-600 bg-red-50 border-red-200';
+    if (score >= 40) return 'text-orange-600 bg-orange-50 border-orange-200';
+    return 'text-green-600 bg-green-50 border-green-200';
   };
 
   return (
     <div>
       <div className="mb-8">
         <h2 className="text-2xl font-bold text-slate-900">AI Churn Predictions</h2>
-        <p className="text-slate-600 mt-1">Predict customer churn risk and get retention recommendations</p>
+        <p className="text-slate-600 mt-1">ML-powered churn prediction with XGBoost (80%+ accuracy)</p>
       </div>
 
-      {/* Search */}
-      <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 mb-6">
-        <form onSubmit={handleSearch} className="flex gap-4">
-          <input
-            type="text"
-            value={customerId}
-            onChange={(e) => setCustomerId(e.target.value)}
-            placeholder="Enter Customer ID (e.g., 7590-VHVEG)"
-            className="flex-1 border border-slate-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button
-            type="submit"
-            className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-          >
-            <Brain size={18} />
-            Analyze
-          </button>
-        </form>
-      </div>
-
-      {loading && (
-        <div className="bg-white rounded-xl p-12 shadow-sm border border-slate-200 text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="text-slate-600 mt-4">Analyzing customer data...</p>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Customer List */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-slate-900">At-Risk Customers</h3>
+            <button
+              onClick={runBatchPrediction}
+              disabled={loading}
+              className="flex items-center gap-1 text-sm bg-purple-600 text-white px-3 py-1.5 rounded-lg hover:bg-purple-700"
+            >
+              <Zap size={14} />
+              Batch Analyze
+            </button>
+          </div>
+          
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {customers.map(customer => (
+              <button
+                key={customer.customerId}
+                onClick={() => predictChurn(customer)}
+                className={`w-full text-left p-3 rounded-lg transition-colors ${
+                  selectedCustomer?.customerId === customer.customerId
+                    ? 'bg-blue-50 border border-blue-200'
+                    : 'hover:bg-slate-50 border border-transparent'
+                }`}
+              >
+                <div className="flex justify-between items-center">
+                  <span className="font-medium text-sm">{customer.customerId}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${
+                    customer.metrics.churnRiskScore >= 70 ? 'bg-red-100 text-red-700' :
+                    customer.metrics.churnRiskScore >= 40 ? 'bg-orange-100 text-orange-700' :
+                    'bg-green-100 text-green-700'
+                  }`}>
+                    {customer.metrics.churnRiskScore}%
+                  </span>
+                </div>
+                <div className="text-xs text-slate-500 mt-1">
+                  {customer.account.contract} • {customer.account.tenure}mo
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
-      )}
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-red-600">
-          {error}
-        </div>
-      )}
+        {/* Prediction Result */}
+        <div className="lg:col-span-2">
+          {loading && (
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+              <p className="text-slate-600 mt-4">Running ML prediction...</p>
+            </div>
+          )}
 
-      {customer && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Risk Score Card */}
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
-            <h3 className="text-lg font-semibold text-slate-900 mb-4">Churn Risk Assessment</h3>
-            <div className="flex items-center justify-center mb-4">
-              <div className="relative w-40 h-40">
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="text-center">
-                    <span className={`text-4xl font-bold ${getRiskColor(customer.metrics.churnRiskScore)}`}>
-                      {customer.metrics.churnRiskScore}%
-                    </span>
-                    <p className="text-sm text-slate-600 mt-1">Risk Score</p>
+          {!loading && !prediction && !batchResults && (
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center">
+              <Brain size={48} className="text-slate-300 mx-auto mb-4" />
+              <p className="text-slate-600">Select a customer or run batch analysis</p>
+            </div>
+          )}
+
+          {prediction && selectedCustomer && (
+            <div className="space-y-6">
+              {/* Risk Score Card */}
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h3 className="font-semibold text-slate-900">Prediction for {selectedCustomer.customerId}</h3>
+                    <p className="text-sm text-slate-500">ML Confidence: {prediction.confidence}%</p>
+                  </div>
+                  <Target size={24} className="text-blue-500" />
+                </div>
+
+                <div className="flex items-center justify-center mb-4">
+                  <div className={`text-center p-6 rounded-full border-2 ${getRiskColor(prediction.riskScore)}`}>
+                    <span className="text-5xl font-bold">{prediction.riskScore}%</span>
+                    <p className="text-sm font-medium mt-1">{prediction.riskLevel} Risk</p>
                   </div>
                 </div>
-                <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
-                  <circle cx="50" cy="50" r="45" fill="none" stroke="#e2e8f0" strokeWidth="8" />
-                  <circle
-                    cx="50" cy="50" r="45" fill="none"
-                    stroke={customer.metrics.churnRiskScore >= 70 ? '#ef4444' : customer.metrics.churnRiskScore >= 40 ? '#f59e0b' : '#10b981'}
-                    strokeWidth="8"
-                    strokeDasharray={`${customer.metrics.churnRiskScore * 2.83} 283`}
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 justify-center">
-              {customer.metrics.churn ? (
-                <AlertTriangle className="text-red-500" size={20} />
-              ) : customer.metrics.churnRiskScore >= 70 ? (
-                <AlertTriangle className="text-orange-500" size={20} />
-              ) : (
-                <Shield className="text-green-500" size={20} />
-              )}
-              <span className="text-sm font-medium text-slate-700">
-                {customer.metrics.churn ? 'Customer has churned' : 
-                 customer.metrics.churnRiskScore >= 70 ? 'High risk - Immediate action needed' :
-                 customer.metrics.churnRiskScore >= 40 ? 'Medium risk - Monitor closely' :
-                 'Low risk - Customer is stable'}
-              </span>
-            </div>
-          </div>
 
-          {/* Customer Details */}
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200">
-            <h3 className="text-lg font-semibold text-slate-900 mb-4">Customer Profile</h3>
-            <div className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-slate-600">Customer ID</span>
-                <span className="font-medium">{customer.customerId}</span>
+                <div className="flex items-center gap-2 justify-center">
+                  {prediction.riskLevel === 'High' ? (
+                    <AlertTriangle className="text-red-500" size={20} />
+                  ) : prediction.riskLevel === 'Medium' ? (
+                    <AlertTriangle className="text-orange-500" size={20} />
+                  ) : (
+                    <Shield className="text-green-500" size={20} />
+                  )}
+                  <span className="text-sm font-medium">
+                    {prediction.willChurn ? 'Likely to churn - Take action' : 'Customer appears stable'}
+                  </span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">Segment</span>
-                <span className={`px-2 py-1 rounded-full text-xs font-medium ${getSegmentColor(customer.metrics.segment)}`}>
-                  {customer.metrics.segment}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">Tenure</span>
-                <span className="font-medium">{customer.account.tenure} months</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">Monthly Charges</span>
-                <span className="font-medium">${customer.account.monthlyCharges}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">Contract</span>
-                <span className="font-medium">{customer.account.contract}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">Services</span>
-                <span className="font-medium">{customer.metrics.serviceCount} active</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-600">Status</span>
-                <span className={`font-medium ${customer.metrics.churn ? 'text-red-600' : 'text-green-600'}`}>
-                  {customer.metrics.churn ? 'Churned' : 'Active'}
-                </span>
-              </div>
-            </div>
-          </div>
 
-          {/* Recommendations */}
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-200 lg:col-span-2">
-            <h3 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-              <TrendingUp size={20} className="text-blue-500" />
-              Retention Recommendations
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {!customer.services.onlineSecurity && (
-                <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-                  <p className="font-medium text-blue-900">Offer Online Security</p>
-                  <p className="text-sm text-blue-700 mt-1">Customers with online security are 40% less likely to churn</p>
-                </div>
-              )}
-              {!customer.services.techSupport && (
-                <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
-                  <p className="font-medium text-purple-900">Add Tech Support</p>
-                  <p className="text-sm text-purple-700 mt-1">Tech support users show higher retention rates</p>
-                </div>
-              )}
-              {customer.account.contract === 'Month-to-month' && (
-                <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-                  <p className="font-medium text-green-900">Offer Annual Contract</p>
-                  <p className="text-sm text-green-700 mt-1">Yearly contracts reduce churn by 65%</p>
-                </div>
-              )}
-              {customer.metrics.serviceCount < 3 && (
-                <div className="p-4 bg-orange-50 rounded-lg border border-orange-200">
-                  <p className="font-medium text-orange-900">Bundle Services</p>
-                  <p className="text-sm text-orange-700 mt-1">Customers with 3+ services have 50% lower churn</p>
+              {/* Recommendations */}
+              {prediction.recommendations.length > 0 && (
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                  <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                    <TrendingUp size={20} className="text-blue-500" />
+                    Retention Recommendations
+                  </h3>
+                  <div className="space-y-3">
+                    {prediction.recommendations.map((rec, index) => (
+                      <div key={index} className={`p-4 rounded-lg border ${
+                        rec.impact === 'Critical' ? 'bg-red-50 border-red-200' :
+                        rec.impact === 'High' ? 'bg-orange-50 border-orange-200' :
+                        'bg-blue-50 border-blue-200'
+                      }`}>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-medium text-sm">{rec.action}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${
+                            rec.impact === 'Critical' ? 'bg-red-200 text-red-800' :
+                            rec.impact === 'High' ? 'bg-orange-200 text-orange-800' :
+                            'bg-blue-200 text-blue-800'
+                          }`}>
+                            {rec.impact}
+                          </span>
+                        </div>
+                        <p className="text-sm text-slate-600">{rec.description}</p>
+                        {rec.potentialSavings && (
+                          <p className="text-xs text-green-600 mt-1 font-medium">💰 {rec.potentialSavings}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
-          </div>
+          )}
+
+          {/* Batch Results */}
+          {batchResults && (
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+              <h3 className="font-semibold text-slate-900 mb-4">Batch Analysis Results</h3>
+              
+              <div className="grid grid-cols-3 gap-4 mb-6">
+                <div className="text-center p-4 bg-red-50 rounded-lg">
+                  <p className="text-2xl font-bold text-red-600">{batchResults.summary.highRisk}</p>
+                  <p className="text-xs text-slate-600">High Risk</p>
+                </div>
+                <div className="text-center p-4 bg-orange-50 rounded-lg">
+                  <p className="text-2xl font-bold text-orange-600">{batchResults.summary.mediumRisk}</p>
+                  <p className="text-xs text-slate-600">Medium Risk</p>
+                </div>
+                <div className="text-center p-4 bg-green-50 rounded-lg">
+                  <p className="text-2xl font-bold text-green-600">{batchResults.summary.lowRisk}</p>
+                  <p className="text-xs text-slate-600">Low Risk</p>
+                </div>
+              </div>
+
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {batchResults.predictions.map(pred => (
+                  <div key={pred.customerId} className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
+                    <span className="text-sm font-medium">{pred.customerId}</span>
+                    <span className={`text-sm px-2 py-0.5 rounded-full ${
+                      pred.riskLevel === 'High' ? 'bg-red-100 text-red-700' :
+                      pred.riskLevel === 'Medium' ? 'bg-orange-100 text-orange-700' :
+                      'bg-green-100 text-green-700'
+                    }`}>
+                      {pred.riskScore}% - {pred.riskLevel}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
